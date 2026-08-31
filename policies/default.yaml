@@ -1,0 +1,36 @@
+name: default
+
+input:
+  injection:
+    enabled: true
+    threshold: 0.6
+    action: block
+
+  pii:
+    enabled: true
+    action: redact
+
+  toxicity:
+    enabled: true
+    threshold: 0.5
+    action: block
+
+  secrets:
+    enabled: true
+    action: block
+
+output:
+  pii:
+    enabled: true
+    action: redact
+
+  toxicity:
+    enabled: true
+    action: block
+
+  secrets:
+    enabled: true
+    action: redact
+
+settings:
+  use_llm_toxicity: false

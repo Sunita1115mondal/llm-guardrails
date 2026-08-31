@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "guardrails-llm"
+version = "0.1.0"
+description = "Input/output safety firewall for LLM apps — PII redaction, prompt-injection & jailbreak detection, secrets + toxicity filters, with a labeled precision/recall benchmark."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["llm-security", "guardrails", "pii-redaction", "prompt-injection", "ai-safety", "llm-firewall", "claude"]
+authors = [{ name = "Taimoor Karim" }]
+
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+serve = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydantic>=2.6"]
+claude = ["anthropic>=0.40"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+all = ["guardrails-llm[serve,claude,dev]"]
+
+[project.scripts]
+guardrails-eval = "guardrails.evaluate:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/guardrails"]
