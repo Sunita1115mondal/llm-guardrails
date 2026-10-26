@@ -1,4 +1,5 @@
-"""FastAPI firewall API.
+
+"""FastAPI firewall API with Bayora team access control.
 
 Endpoints:
     GET  /health
@@ -6,16 +7,7 @@ Endpoints:
     POST /guard/input
     POST /guard/output
     POST /chat
-
-The API provides:
-- request IDs
-- safe structured logging
-- input/output guardrails
-- PII redaction
-- secret detection
-- prompt-injection detection
-- toxicity filtering
-- optional JSON schema validation
+    GET  /bayora/private/{team}
 """
 
 from __future__ import annotations
@@ -23,7 +15,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
@@ -33,6 +27,7 @@ from guardrails.guard import Guard
 from guardrails.schema import SchemaValidationError, validate_json
 
 from api.middleware import RequestIDMiddleware
+from api.bayora_security import router as bayora_security_router
 
 
 # ---------------------------------------------------------------------------
@@ -51,15 +46,41 @@ logger = logging.getLogger("llm_guardrails.api")
 # Application
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+
 app = FastAPI(
-    title="LLM Guardrails",
+    title="Bayora AI Safety & Security Platform",
     version="0.3.0",
     description=(
-        "Safety middleware for LLM applications with "
-        "input/output guardrails and schema validation."
+        "Bayora provides AI safety guardrails, "
+        "input/output validation, schema validation, "
+        "and team access-control demonstrations."
     ),
 )
+
+# Register CORS for the local React development frontend.
+# Keep origins restricted to trusted local development URLs.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+    ],
+)
+
+# Register request ID middleware and security routes.
 app.add_middleware(RequestIDMiddleware)
+app.include_router(bayora_security_router)
 
 
 @app.middleware("http")
@@ -107,6 +128,10 @@ async def request_logging_middleware(request: Request, call_next):
     return response
 
 
+# ---------------------------------------------------------------------------
+# Guardrails
+# ---------------------------------------------------------------------------
+
 guard = Guard()
 
 
@@ -120,12 +145,7 @@ async def validation_exception_handler(
     exc: RequestValidationError,
 ):
     """Return a consistent validation error response."""
-
-    request_id = getattr(
-        request.state,
-        "request_id",
-        None,
-    )
+    request_id = getattr(request.state, "request_id", None)
 
     return JSONResponse(
         status_code=422,
@@ -147,12 +167,7 @@ async def general_exception_handler(
     exc: Exception,
 ):
     """Return a safe internal error without exposing implementation details."""
-
-    request_id = getattr(
-        request.state,
-        "request_id",
-        None,
-    )
+    request_id = getattr(request.state, "request_id", None)
 
     logger.exception(
         "unhandled_exception",
@@ -182,7 +197,6 @@ async def general_exception_handler(
 
 def _llm(prompt: str) -> str:
     """Call Claude when configured; otherwise return a deterministic mock."""
-
     api_key = os.getenv("ANTHROPIC_API_KEY")
 
     if not api_key:
@@ -190,19 +204,12 @@ def _llm(prompt: str) -> str:
 
     import anthropic
 
-    client = anthropic.Anthropic(
-        api_key=api_key,
-    )
+    client = anthropic.Anthropic(api_key=api_key)
 
     response = client.messages.create(
         model=MODEL,
         max_tokens=512,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
+        messages=[{"role": "user", "content": prompt}],
     )
 
     return next(
@@ -222,15 +229,9 @@ def _llm(prompt: str) -> str:
 class TextIn(BaseModel):
     """Request body for direct guard endpoints."""
 
-    model_config = ConfigDict(
-        extra="forbid",
-    )
+    model_config = ConfigDict(extra="forbid")
 
-    text: str = Field(
-        ...,
-        min_length=1,
-        max_length=50_000,
-    )
+    text: str = Field(..., min_length=1, max_length=50_000)
 
 
 class ChatIn(BaseModel):
@@ -241,16 +242,8 @@ class ChatIn(BaseModel):
         populate_by_name=True,
     )
 
-    prompt: str = Field(
-        ...,
-        min_length=1,
-        max_length=50_000,
-    )
-
-    output_schema: dict | None = Field(
-        default=None,
-        alias="schema",
-    )
+    prompt: str = Field(..., min_length=1, max_length=50_000)
+    output_schema: dict | None = Field(default=None, alias="schema")
 
 
 # ---------------------------------------------------------------------------
@@ -259,24 +252,13 @@ class ChatIn(BaseModel):
 
 def _request_id(request: Request) -> str | None:
     """Get the request ID assigned by middleware."""
-
-    return getattr(
-        request.state,
-        "request_id",
-        None,
-    )
+    return getattr(request.state, "request_id", None)
 
 
-def _with_request_id(
-    request: Request,
-    payload: dict,
-) -> dict:
-    """Attach the request ID to a successful API response."""
-
+def _with_request_id(request: Request, payload: dict) -> dict:
+    """Attach the request ID to a response."""
     result = dict(payload)
-
     result["request_id"] = _request_id(request)
-
     return result
 
 
@@ -284,13 +266,9 @@ def _with_request_id(
 # Health
 # ---------------------------------------------------------------------------
 
-@app.get(
-    "/health",
-    tags=["system"],
-)
+@app.get("/health", tags=["system"])
 def health(request: Request):
     """Basic liveness check."""
-
     return _with_request_id(
         request,
         {
@@ -301,13 +279,9 @@ def health(request: Request):
     )
 
 
-@app.get(
-    "/ready",
-    tags=["system"],
-)
+@app.get("/ready", tags=["system"])
 def ready(request: Request):
     """Readiness check."""
-
     return _with_request_id(
         request,
         {
@@ -322,66 +296,31 @@ def ready(request: Request):
 # Input guard
 # ---------------------------------------------------------------------------
 
-@app.post(
-    "/guard/input",
-    tags=["guardrails"],
-)
-def guard_input(
-    body: TextIn,
-    request: Request,
-):
+@app.post("/guard/input", tags=["guardrails"])
+def guard_input(body: TextIn, request: Request):
     """Scan user input for safety and sensitive information."""
-
     verdict = guard.scan_input(body.text)
-
-    return _with_request_id(
-        request,
-        verdict.to_dict(),
-    )
+    return _with_request_id(request, verdict.to_dict())
 
 
 # ---------------------------------------------------------------------------
 # Output guard
 # ---------------------------------------------------------------------------
 
-@app.post(
-    "/guard/output",
-    tags=["guardrails"],
-)
-def guard_output(
-    body: TextIn,
-    request: Request,
-):
+@app.post("/guard/output", tags=["guardrails"])
+def guard_output(body: TextIn, request: Request):
     """Scan LLM output for safety and sensitive information."""
-
     verdict = guard.scan_output(body.text)
-
-    return _with_request_id(
-        request,
-        verdict.to_dict(),
-    )
+    return _with_request_id(request, verdict.to_dict())
 
 
 # ---------------------------------------------------------------------------
 # Guarded chat
 # ---------------------------------------------------------------------------
 
-@app.post(
-    "/chat",
-    tags=["chat"],
-)
-def chat(
-    body: ChatIn,
-    request: Request,
-):
-    """Run a fully guarded LLM interaction."""
-
-    request_id = _request_id(request)
-
-    # ---------------------------------------------------------------
-    # 1. INPUT GUARD
-    # ---------------------------------------------------------------
-
+@app.post("/chat", tags=["chat"])
+def chat(body: ChatIn, request: Request):
+    """Run a guarded LLM interaction."""
     inp = guard.scan_input(body.prompt)
 
     if not inp.allowed:
@@ -397,33 +336,27 @@ def chat(
             },
         )
 
-    # ---------------------------------------------------------------
-    # 2. LLM + optional schema retry
-    # ---------------------------------------------------------------
-
     max_attempts = 3
-
     answer = ""
     out = None
     schema_valid = None
     attempt = 0
-
     required_fields: list[str] = []
 
     if body.output_schema is not None:
-        required_fields = body.output_schema.get(
-            "required",
-            [],
-        )
+        required_fields = body.output_schema.get("required", [])
 
-        if not isinstance(required_fields, list):
+        if (
+            not isinstance(required_fields, list)
+            or not all(isinstance(field, str) for field in required_fields)
+        ):
             return _with_request_id(
                 request,
                 {
                     "blocked": True,
                     "stage": "schema",
                     "reasons": [
-                        "The schema 'required' field must be a list."
+                        "The schema 'required' field must be a list of strings."
                     ],
                     "answer": "Invalid output schema.",
                     "attempts": 0,
@@ -433,7 +366,6 @@ def chat(
             )
 
     for attempt in range(1, max_attempts + 1):
-
         prompt = inp.text
 
         if body.output_schema is not None and attempt > 1:
@@ -446,11 +378,6 @@ def chat(
             )
 
         answer = _llm(prompt)
-
-        # -----------------------------------------------------------
-        # 3. OUTPUT GUARD
-        # -----------------------------------------------------------
-
         out = guard.scan_output(answer)
 
         if not out.allowed:
@@ -463,38 +390,23 @@ def chat(
                     "answer": "Response withheld by output guardrail.",
                     "attempts": attempt,
                     "schema_valid": (
-                        False
-                        if body.output_schema is not None
-                        else None
+                        False if body.output_schema is not None else None
                     ),
                     "input_verdict": inp.to_dict(),
                     "output_verdict": out.to_dict(),
                 },
             )
 
-        # -----------------------------------------------------------
-        # 4. No schema requested
-        # -----------------------------------------------------------
-
         if body.output_schema is None:
             schema_valid = None
             break
 
-        # -----------------------------------------------------------
-        # 5. Schema validation
-        # -----------------------------------------------------------
-
         try:
-            validate_json(
-                out.text,
-                required_fields,
-            )
-
+            validate_json(out.text, required_fields)
             schema_valid = True
             break
 
         except SchemaValidationError as exc:
-
             schema_valid = False
 
             if attempt == max_attempts:
@@ -503,9 +415,7 @@ def chat(
                     {
                         "blocked": True,
                         "stage": "schema",
-                        "reasons": [
-                            str(exc),
-                        ],
+                        "reasons": [str(exc)],
                         "answer": (
                             "Response did not satisfy the "
                             "required output schema."
@@ -516,10 +426,6 @@ def chat(
                         "output_verdict": out.to_dict(),
                     },
                 )
-
-    # ---------------------------------------------------------------
-    # 6. SAFE RESPONSE
-    # ---------------------------------------------------------------
 
     return _with_request_id(
         request,
@@ -532,4 +438,3 @@ def chat(
             "output_verdict": out.to_dict() if out is not None else None,
         },
     )
-

@@ -41,6 +41,7 @@ class SecretSpan:
 # Secret detection patterns
 # ---------------------------------------------------------------------------
 
+
 _PATTERNS = [
     (
         "aws_access_key",
@@ -55,23 +56,28 @@ _PATTERNS = [
         re.compile(r"\bsk-ant-[A-Za-z0-9_-]{16,}\b"),
     ),
     (
+        "generic_api_key",
+        re.compile(r"\bsk-(?!ant-)[A-Za-z0-9_-]{12,}\b"),
+    ),
+    (
         "api_key",
         re.compile(
-            r"\bapi[-_]?key\s*[:=]\s*[A-Za-z0-9_-]{12,}",
+            r"\bapi[-_ ]?key\b(?:\s*[:=]\s*|\s+is\s+)"
+            r"[A-Za-z0-9_-]{8,}",
             re.IGNORECASE,
         ),
     ),
     (
         "client_secret",
         re.compile(
-            r"\bclient[-_]?secret\s*[:=]\s*[A-Za-z0-9_-]{12,}",
+            r"\bclient[-_ ]?secret\b\s*[:=]\s*[A-Za-z0-9_-]{8,}",
             re.IGNORECASE,
         ),
     ),
     (
         "password",
         re.compile(
-            r"\bpassword\s*[:=]\s*[^\s,;]{6,}",
+            r"\bpassword\b\s*[:=]\s*[^\s,;]{6,}",
             re.IGNORECASE,
         ),
     ),
@@ -86,22 +92,21 @@ _PATTERNS = [
     ),
 ]
 
-
 # ---------------------------------------------------------------------------
 # Detection
 # ---------------------------------------------------------------------------
 
-def detect(text: str) -> list[SecretSpan]:
-    """Return all detected secret spans."""
 
+def detect(text: str) -> list[SecretSpan]:
+    """Return non-overlapping detected secret spans."""
     if not isinstance(text, str):
         return []
 
-    findings: list[SecretSpan] = []
+    candidates: list[SecretSpan] = []
 
     for secret_type, pattern in _PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(
+            candidates.append(
                 SecretSpan(
                     type=secret_type,
                     start=match.start(),
@@ -110,9 +115,19 @@ def detect(text: str) -> list[SecretSpan]:
                 )
             )
 
-    findings.sort(key=lambda item: (item.start, item.end))
+    # Prefer the longest match when patterns overlap.
+    candidates.sort(
+        key=lambda item: (item.start, -(item.end - item.start))
+    )
+
+    findings: list[SecretSpan] = []
+    for candidate in candidates:
+        if findings and candidate.start < findings[-1].end:
+            continue
+        findings.append(candidate)
 
     return findings
+
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +135,7 @@ def detect(text: str) -> list[SecretSpan]:
 # ---------------------------------------------------------------------------
 
 _REPLACEMENTS = {
+    "generic_api_key": "[API_KEY]",
     "aws_access_key": "[AWS_ACCESS_KEY]",
     "anthropic_key": "[ANTHROPIC_KEY]",
     "github_token": "[GITHUB_TOKEN]",

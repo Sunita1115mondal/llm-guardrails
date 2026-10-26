@@ -1,0 +1,39 @@
+{
+  "endpoint": "http://127.0.0.1:8000",
+  "checks_passed": 6,
+  "checks_failed": 0,
+  "total_checks": 6,
+  "results": [
+    {
+      "check": "Red team can access red resource",
+      "passed": true,
+      "detail": "expected HTTP 200, received HTTP 200"
+    },
+    {
+      "check": "Red team cannot access blue resource",
+      "passed": true,
+      "detail": "expected HTTP 403, received HTTP 403"
+    },
+    {
+      "check": "Blue team can access blue resource",
+      "passed": true,
+      "detail": "expected HTTP 200, received HTTP 200"
+    },
+    {
+      "check": "Blue team cannot access red resource",
+      "passed": true,
+      "detail": "expected HTTP 403, received HTTP 403"
+    },
+    {
+      "check": "Unauthenticated request is rejected",
+      "passed": true,
+      "detail": "expected HTTP 401 or 403, received HTTP 401"
+    },
+    {
+      "check": "Audit chain verifies",
+      "passed": true,
+      "detail": "HTTP 200; valid=True; records_checked=34; error=None"
+    }
+  ],
+  "scope": "Application-level authorization and audit verification; not proof of OS, container, or network isolation."
+}
