@@ -219,7 +219,7 @@ def authenticate_audit_admin(
         )
 
 
-@router.get("/audit/verify", tags=["Bayora audit"])
+@router.post("/audit/verify", tags=["Bayora audit"])
 def verify_audit_integrity(
     _: None = Depends(authenticate_audit_admin),
 ):
